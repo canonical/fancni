@@ -57,3 +57,4 @@ lxc exec node1 -- fanctl down -e
 - [ ] Improve test coverage
 - [ ] Add support for IPv6
 - [X] Implement flock
+- [ ] Use https://github.com/vishvananda/netlink
