@@ -2,12 +2,12 @@ package ipam
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
-	"strconv"
-	"strings"
+	"syscall"
 	"time"
 
 	pkgipam "github.com/HomayoonAlimohammadi/fancni/pkg/ipam"
@@ -16,11 +16,13 @@ import (
 
 // FileIPAM implements the IPAM interface using a file as the backend.
 type FileIPAM struct {
-	lockFile      string
-	lockFilePerm  os.FileMode
-	allocFile     string
-	allocFilePerm os.FileMode
-	podCIDR       string
+	lockFile       string
+	lockFilePerm   os.FileMode
+	lockMaxRetries int
+	lockRetryDelay time.Duration
+	allocFile      string
+	allocFilePerm  os.FileMode
+	podCIDR        string
 }
 
 var _ pkgipam.IPAM = &FileIPAM{}
@@ -28,76 +30,61 @@ var _ pkgipam.IPAM = &FileIPAM{}
 // NewFileIPAM creates a new inFileIPAM instance with the specified lock file and allocation file.
 func NewFileIPAM(lockFile, allocFile string, podCIDR string) *FileIPAM {
 	return &FileIPAM{
-		lockFile:      lockFile,
-		lockFilePerm:  0644,
-		allocFile:     allocFile,
-		allocFilePerm: 0644,
-		podCIDR:       podCIDR,
+		lockFile:       lockFile,
+		lockFilePerm:   0644,
+		lockMaxRetries: 100,
+		lockRetryDelay: 100 * time.Millisecond,
+		allocFile:      allocFile,
+		allocFilePerm:  0644,
+		podCIDR:        podCIDR,
 	}
 }
 
-// Lock acquires a lock by creating a lock file.
-// If the lock exists it keeps retrying until it can create the file.
-func (i *FileIPAM) Lock() error {
-	if i.lockFile == "" {
-		return fmt.Errorf("lockFile must be set")
-	}
-
+// Lock acquires a lock on the file descriptor.
+func (i *FileIPAM) Lock(fd uintptr) error {
+	var attempt int
 	for {
-		// O_EXCL with O_CREATE ensures the call fails if the file already exists
-		f, err := os.OpenFile(i.lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, i.lockFilePerm)
+		err := syscall.Flock(int(fd), syscall.LOCK_EX|syscall.LOCK_NB)
 		if err == nil {
-			fmt.Fprintf(f, "%d", os.Getpid())
-			f.Close()
 			return nil
 		}
-
-		if !os.IsExist(err) {
-			return fmt.Errorf("failed to create lock file: %w", err)
+		// Check if error is EWOULDBLOCK (lock is held by someone else)
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+			return fmt.Errorf("failed to acquire lock: %w", err)
 		}
 
-		// File exists, which means lock is held by someone else
-		// Wait a bit before retrying
-		time.Sleep(10 * time.Millisecond)
+		attempt++
+		if attempt >= i.lockMaxRetries {
+			return fmt.Errorf("failed to acquire lock after %d attempts: %w", attempt, err)
+		}
+		time.Sleep(i.lockRetryDelay)
 	}
 }
 
-// Unlock releases the lock by removing the lock file.
-// If the lock file doesn't exist, it returns an error.
-// If the lock file is held by another process, it returns an error.
-func (i *FileIPAM) Unlock() error {
-	if i.lockFile == "" {
-		return fmt.Errorf("lockFile must be set")
+// Unlock releases the lock on the file descriptor.
+func (i *FileIPAM) Unlock(fd uintptr) error {
+	if err := syscall.Flock(int(fd), syscall.LOCK_UN); err != nil {
+		return fmt.Errorf("failed to release lock: %w", err)
 	}
-
-	// check if the pid in the lock file is ours
-	b, err := os.ReadFile(i.lockFile)
-	if err != nil {
-		return fmt.Errorf("failed to read lock file: %w", err)
-	}
-
-	pidStr := strings.TrimSpace(string(b))
-	pid, err := strconv.Atoi(pidStr)
-	if err != nil {
-		return fmt.Errorf("failed to parse pid from lock file: %w", err)
-	}
-
-	if pid != os.Getpid() {
-		return fmt.Errorf("failed to unlock. lock file is held by another process (pid: %d)", pid)
-	}
-
-	err = os.Remove(i.lockFile)
-	if err != nil {
-		return fmt.Errorf("failed to remove lock file: %w", err)
-	}
-
 	return nil
 }
 
 // AllocateIP allocates an IP address for a container.
 func (i *FileIPAM) AllocateIP(containerID string) (net.IP, error) {
-	i.Lock()
-	defer i.Unlock()
+	lockFile, err := os.OpenFile(i.lockFile, os.O_CREATE|os.O_RDWR, i.lockFilePerm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open lock file: %w", err)
+	}
+	defer lockFile.Close()
+
+	if err := i.Lock(lockFile.Fd()); err != nil {
+		return nil, fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		if err := i.Unlock(lockFile.Fd()); err != nil {
+			log.Printf("failed to release lock: %v", err)
+		}
+	}()
 
 	baseIP, ipNet, err := net.ParseCIDR(i.podCIDR)
 	if err != nil {
@@ -167,8 +154,20 @@ func (i *FileIPAM) AllocateIP(containerID string) (net.IP, error) {
 // Lookup checks if an IP address is allocated to a container.
 // It returns the IP address and a boolean indicating if it was found, and an error in any.
 func (i *FileIPAM) Lookup(containerID string) (net.IP, bool, error) {
-	i.Lock()
-	defer i.Unlock()
+	lockFile, err := os.OpenFile(i.lockFile, os.O_CREATE|os.O_RDWR, i.lockFilePerm)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to open lock file: %w", err)
+	}
+	defer lockFile.Close()
+
+	if err := i.Lock(lockFile.Fd()); err != nil {
+		return nil, false, fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		if err := i.Unlock(lockFile.Fd()); err != nil {
+			log.Printf("failed to release lock: %v", err)
+		}
+	}()
 
 	b, err := os.ReadFile(i.allocFile)
 	if err != nil {
@@ -196,8 +195,20 @@ func (i *FileIPAM) Lookup(containerID string) (net.IP, bool, error) {
 // Free frees the allocated IP address for a container.
 // It returns the container ID associated with the IP address if there is any.
 func (i *FileIPAM) Free(ip net.IP) (string, bool, error) {
-	i.Lock()
-	defer i.Unlock()
+	lockFile, err := os.OpenFile(i.lockFile, os.O_CREATE|os.O_RDWR, i.lockFilePerm)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to open lock file: %w", err)
+	}
+	defer lockFile.Close()
+
+	if err := i.Lock(lockFile.Fd()); err != nil {
+		return "", false, fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		if err := i.Unlock(lockFile.Fd()); err != nil {
+			log.Printf("failed to release lock: %v", err)
+		}
+	}()
 
 	b, err := os.ReadFile(i.allocFile)
 	if err != nil {
