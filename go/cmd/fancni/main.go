@@ -9,6 +9,8 @@ import (
 	"github.com/HomayoonAlimohammadi/fancni/internal/config"
 	internalipam "github.com/HomayoonAlimohammadi/fancni/internal/ipam"
 	pkgcni "github.com/HomayoonAlimohammadi/fancni/pkg/cni"
+	"github.com/HomayoonAlimohammadi/fancni/pkg/fan"
+	"github.com/HomayoonAlimohammadi/fancni/pkg/net/ip"
 )
 
 const (
@@ -25,21 +27,27 @@ func main() {
 	}
 	defer logFile.Close()
 	log.SetOutput(logFile)
+	log.SetPrefix(fmt.Sprintf("[PID: %d]", os.Getpid()))
 
 	netConfig, err := config.ReadNetConfig(os.Stdin)
 	if err != nil {
 		log.Fatalf("failed to read net config: %v\n", err)
 	}
 
-	// Log the environment variables and config.
-	envVars := []string{pkgcni.EnvCommand, pkgcni.EnvIFName, pkgcni.EnvNetNS, pkgcni.EnvContainerID}
-	for _, env := range envVars {
-		log.Printf("%s: %s", env, os.Getenv(env))
-	}
-	log.Printf("STDIN: %+v\n", netConfig)
+	logStuff(netConfig)
 
-	ipam := internalipam.NewFileIPAM(ipamLockFile, ipamAllocFile, netConfig.PodCIDR)
-	plugin := internalcni.NewPlugin(netConfig, ipam)
+	hostIP, err := ip.GetHostIP()
+	if err != nil {
+		log.Fatalf("failed to get host IP: %v\n", err)
+	}
+
+	podCIDR, err := fan.GetSubnet(netConfig.OverlayNetwork, hostIP)
+	if err != nil {
+		log.Fatalf("failed to get fan subnet: %v\n", err)
+	}
+
+	ipam := internalipam.NewFileIPAM(ipamLockFile, ipamAllocFile, podCIDR)
+	plugin := internalcni.NewPlugin(netConfig, ipam, hostIP)
 
 	cmd := os.Getenv(pkgcni.EnvCommand)
 	switch cmd {
@@ -62,4 +70,15 @@ func main() {
 	default:
 		log.Fatalf("unknown CNI command: %s\n", cmd)
 	}
+}
+
+// logStuff logs the environment variables and the net config.
+// (or really anything else that might be necessary for debugging :D)
+func logStuff(netConfig pkgcni.NetConfig) {
+	log.Printf("PATH: %s", os.Getenv("PATH"))
+	envVars := []string{pkgcni.EnvCommand, pkgcni.EnvIFName, pkgcni.EnvNetNS, pkgcni.EnvContainerID}
+	for _, env := range envVars {
+		log.Printf("%s: %s", env, os.Getenv(env))
+	}
+	log.Printf("STDIN: %+v", netConfig)
 }

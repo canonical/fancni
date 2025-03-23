@@ -124,12 +124,15 @@ func (i *FileIPAM) AllocateIP(containerID string) (net.IP, error) {
 		allocatedIPs[ip] = struct{}{}
 	}
 
-	baseIPStr := baseIP.String()
 	for last := 2; last < 255; last++ {
-		candidIP := ip.ReplaceLastByte(baseIPStr, last)
-		if _, exists := allocatedIPs[candidIP]; !exists {
+		candidIP, err := ip.ReplaceLastOctet(baseIP, last)
+		if err != nil {
+			return nil, fmt.Errorf("failed to replace last octet of IP %q: %w", baseIP, err)
+		}
+
+		if _, exists := allocatedIPs[candidIP.String()]; !exists {
 			// Found an available IP
-			contIDToIP[containerID] = candidIP
+			contIDToIP[containerID] = candidIP.String()
 			break
 		}
 	}

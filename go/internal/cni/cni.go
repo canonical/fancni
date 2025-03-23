@@ -12,9 +12,9 @@ import (
 	"github.com/HomayoonAlimohammadi/fancni/pkg/cni"
 	pkgcni "github.com/HomayoonAlimohammadi/fancni/pkg/cni"
 	"github.com/HomayoonAlimohammadi/fancni/pkg/command"
+	"github.com/HomayoonAlimohammadi/fancni/pkg/fan"
 	pkgipam "github.com/HomayoonAlimohammadi/fancni/pkg/ipam"
 	pkgnet "github.com/HomayoonAlimohammadi/fancni/pkg/net"
-	"github.com/HomayoonAlimohammadi/fancni/pkg/net/ip"
 )
 
 const (
@@ -25,7 +25,6 @@ const (
 
 // plugin represents the CNI plugin.
 type plugin struct {
-	bridgeName           string
 	cniVersion           string
 	cniSupportedVersions string
 
@@ -35,11 +34,11 @@ type plugin struct {
 
 	config cni.NetConfig
 	ipam   pkgipam.IPAM
+	hostIP net.IP
 }
 
-func NewPlugin(netConfig pkgcni.NetConfig, ipam pkgipam.IPAM) *plugin {
+func NewPlugin(netConfig pkgcni.NetConfig, ipam pkgipam.IPAM, hostIP net.IP) *plugin {
 	p := &plugin{
-		bridgeName:           defaultBridgeName,
 		cniVersion:           defaultCNIVersion,
 		cniSupportedVersions: defaultSupportedVersions,
 
@@ -49,6 +48,7 @@ func NewPlugin(netConfig pkgcni.NetConfig, ipam pkgipam.IPAM) *plugin {
 
 		config: netConfig,
 		ipam:   ipam,
+		hostIP: hostIP,
 	}
 
 	return p
@@ -56,34 +56,23 @@ func NewPlugin(netConfig pkgcni.NetConfig, ipam pkgipam.IPAM) *plugin {
 
 // HandleAdd implements the ADD command.
 func (c *plugin) HandleAdd() error {
-	baseIP, _, err := net.ParseCIDR(c.config.PodCIDR)
+	underlayNetwork, err := fan.GetUnderlayNetwork(c.hostIP)
 	if err != nil {
-		return fmt.Errorf("failed to parse podcidr %q: %w", c.config.PodCIDR, err)
+		return fmt.Errorf("failed to get underlay network: %w", err)
 	}
 
-	gatewayIP, err := ip.GetGatewayIP(baseIP)
+	fanBridgeName, err := fan.GetBridgeName(c.config.OverlayNetwork)
 	if err != nil {
-		return fmt.Errorf("failed to get gateway IP: %w", err)
+		return fmt.Errorf("failed to get fan bridge name: %w", err)
 	}
 
-	gatewayIPStr := gatewayIP.String()
-
-	if err := command.Run("ip", "link", "add", c.bridgeName, "type", "bridge"); err != nil {
-		// Ignore error if bridge already exists.
-		if !strings.Contains(err.Error(), "File exists") {
-			return fmt.Errorf("failed to add bridge: %w", err)
-		}
+	fanGatewayIP, err := fan.GetGatewayIP(c.config.OverlayNetwork, c.hostIP)
+	if err != nil {
+		return fmt.Errorf("failed to get fan gateway IP: %w", err)
 	}
 
-	if err := command.Run("ip", "link", "set", c.bridgeName, "up"); err != nil {
-		return fmt.Errorf("failed to set bridge up: %w", err)
-	}
-
-	if err := command.Run("ip", "addr", "add", fmt.Sprintf("%s/24", gatewayIPStr), "dev", c.bridgeName); err != nil {
-		// Ignore if the address is already assigned.
-		if !strings.Contains(err.Error(), "Address already assigned") {
-			return fmt.Errorf("failed to add address to bridge: %w", err)
-		}
+	if err := fan.Ensure(fanBridgeName, c.config.OverlayNetwork, underlayNetwork); err != nil {
+		return fmt.Errorf("failed to ensure fan device: %w", err)
 	}
 
 	podIP, err := c.ipam.AllocateIP(c.containerID)
@@ -107,8 +96,8 @@ func (c *plugin) HandleAdd() error {
 
 	contNetns := filepath.Base(c.netNS)
 
-	if err := command.Run("ip", "link", "set", hostIfname, "master", c.bridgeName); err != nil {
-		return fmt.Errorf("failed to set %s master to %s: %w", hostIfname, c.bridgeName, err)
+	if err := command.Run("ip", "link", "set", hostIfname, "master", fanBridgeName); err != nil {
+		return fmt.Errorf("failed to set %s master to %s: %w", hostIfname, fanBridgeName, err)
 	}
 
 	if err := command.Run("ip", "link", "set", podIfname, "netns", contNetns); err != nil {
@@ -127,8 +116,8 @@ func (c *plugin) HandleAdd() error {
 		return fmt.Errorf("failed to add address to interface in netns: %w", err)
 	}
 
-	if err := command.Run("ip", "-n", contNetns, "route", "add", "default", "via", gatewayIPStr); err != nil {
-		return fmt.Errorf("failed to add default route in netns: %w", err)
+	if err := command.Run("ip", "-n", contNetns, "route", "add", "default", "via", fanGatewayIP.String()); err != nil {
+		return fmt.Errorf("failed to add default route to %s in netns: %w", fanGatewayIP.String(), err)
 	}
 
 	mac, err := pkgnet.GetInterfaceMAC(contNetns, c.ifName)
@@ -151,7 +140,7 @@ func (c *plugin) HandleAdd() error {
 			// NOTE(Hue): Only IPv4 is supported for now.
 			Version:   "4",
 			Address:   fmt.Sprintf("%s/24", podIP.String()),
-			Gateway:   gatewayIPStr,
+			Gateway:   fanGatewayIP.String(),
 			Interface: 0,
 		},
 	}
@@ -192,6 +181,7 @@ func (c *plugin) HandleDel() error {
 		log.Printf("IP %s not found in allocation file", ip.String())
 	}
 
+	// NOTE(Hue): The host veth peer number is the last octet of the IP address.
 	interm := strings.Split(ip.String(), ".")
 	devNum := interm[len(interm)-1]
 

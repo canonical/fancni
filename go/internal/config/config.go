@@ -20,16 +20,16 @@ func ReadNetConfig(r io.Reader) (pkgcni.NetConfig, error) {
 		return pkgcni.NetConfig{}, fmt.Errorf("failed to parse config JSON: %w", err)
 	}
 
-	if netConfig.PodCIDR == "" {
-		return pkgcni.NetConfig{}, fmt.Errorf("PodCIDR not specified in config")
+	if netConfig.OverlayNetwork == "" {
+		return pkgcni.NetConfig{}, fmt.Errorf("overlay network not specified in config")
 	}
 
-	baseIP, _, err := net.ParseCIDR(netConfig.PodCIDR)
+	baseIP, _, err := net.ParseCIDR(netConfig.OverlayNetwork)
 	if err != nil {
-		return pkgcni.NetConfig{}, fmt.Errorf("failed to parse podcidr %q: %w", netConfig.PodCIDR, err)
+		return pkgcni.NetConfig{}, fmt.Errorf("failed to parse overlay network %q: %w", netConfig.OverlayNetwork, err)
 	}
 	if baseIP.To4() == nil {
-		return pkgcni.NetConfig{}, fmt.Errorf("PodCIDR %q is not IPv4. Only IPv4 is supported", netConfig.PodCIDR)
+		return pkgcni.NetConfig{}, fmt.Errorf("overlay network %q is not IPv4. Only IPv4 is supported", netConfig.OverlayNetwork)
 	}
 
 	return netConfig, nil

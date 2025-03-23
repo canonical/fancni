@@ -1,11 +1,11 @@
 #!/bin/bash
-# Updated CNI plugin that uses Ubuntu Fan networking
 
 log=/var/log/cni.log
 config=$(cat /dev/stdin)
 
 # Log the incoming parameters
 echo >> "$log"
+echo "PATH: $PATH" >> "$log"
 echo "COMMAND: $CNI_COMMAND" >> "$log"
 echo "IF: $CNI_IFNAME" >> "$log"
 echo "NETNS: $CNI_NETNS" >> "$log"
@@ -14,21 +14,17 @@ echo "STD IN: $config" >> "$log"
 
 # Determine host's primary IP (the underlay IP)
 host_ip=$(ip route get 1.1.1.1 | awk '{print $7; exit}')
-# We use a fixed overlay range; here we choose 10.0.0.0/8 as the Fan overlay
-fan_overlay="10.0.0.0/8"
+fan_overlay="240.0.0.0/8"
 
-# Compute Fan overlay subnet based on host_ip.
-# Fan networking maps host IP A.B.C.D to overlay subnet "10.C.D.0/24".
+# Fan networking maps host IP A.B.C.D to overlay subnet "240.C.D.0/24".
 IFS='.' read -r a b c d <<< "$host_ip"
-fan_subnet="10.${c}.${d}.0/24"
-fan_bridge="fan-10-${c}-${d}"
+fan_subnet="240.${c}.${d}.0/24"
+fan_bridge="fan-240"
 # Set default gateway as the first address in the fan subnet
-fan_gateway="10.${c}.${d}.1"
+fan_gateway="240.${c}.${d}.1"
 
 # If the fan bridge doesn't exist, call fanctl to bring it up.
 if ! ip link show "$fan_bridge" > /dev/null 2>&1; then
-    # Note: 'fanctl up' creates the fan bridge using the host IP.
-    # The "dhcp" option can be used if dynamic IP allocation is desired.
     fanctl up "$fan_overlay" "${host_ip}/16" dhcp
     echo "Fan bridge $fan_bridge created via fanctl" >> "$log"
 fi
@@ -43,8 +39,7 @@ ADD)
         n=1
     fi
     n=$((n+1))
-    # Allocate container IP as 10.c.d.(n+1), ensuring it is within the /24.
-    container_ip="10.${c}.${d}.$((n+1))"
+    container_ip="240.${c}.${d}.$((n+1))"
     echo "$n" > /tmp/last_allocated_ip
 
     host_ifname="veth$n"
@@ -53,9 +48,7 @@ ADD)
     ip link add "$host_ifname" type veth peer name "$pod_ifname"
     ip link set "$host_ifname" up
 
-    # Move the container-side veth into the container's network namespace.
     cont_netns=$(basename "$CNI_NETNS")
-    # Instead of adding to a manually created bridge (cni0), we add to the Fan bridge.
     ip link set "$host_ifname" master "$fan_bridge"
     ip link set "$pod_ifname" netns "$cont_netns"
 

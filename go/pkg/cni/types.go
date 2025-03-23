@@ -2,7 +2,7 @@ package cni
 
 // NetConfig represents the expected network configuration JSON.
 type NetConfig struct {
-	PodCIDR string `json:"podcidr"`
+	OverlayNetwork string `json:"overlayNetwork"`
 }
 
 // Interface represents the output interface format.
