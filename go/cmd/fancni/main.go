@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 
 	internalcni "github.com/HomayoonAlimohammadi/fancni/internal/cni"
 	"github.com/HomayoonAlimohammadi/fancni/internal/config"
@@ -35,6 +36,7 @@ func main() {
 	}
 
 	logStuff(netConfig)
+	ensureBinaries()
 
 	hostIP, err := ip.GetHostIP()
 	if err != nil {
@@ -81,4 +83,14 @@ func logStuff(netConfig pkgcni.NetConfig) {
 		log.Printf("%s: %s", env, os.Getenv(env))
 	}
 	log.Printf("STDIN: %+v", netConfig)
+}
+
+// ensureBinaries checks if the required binaries are installed and available in the PATH.
+func ensureBinaries() {
+	binaries := []string{"ip", "iptables", "fanctl"}
+	for _, binary := range binaries {
+		if _, err := exec.LookPath(binary); err != nil {
+			log.Fatalf("required binary %s not found in PATH: %v\n", binary, err)
+		}
+	}
 }
