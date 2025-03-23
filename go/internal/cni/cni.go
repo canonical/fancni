@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/HomayoonAlimohammadi/fancni/pkg/cni"
 	pkgcni "github.com/HomayoonAlimohammadi/fancni/pkg/cni"
 	"github.com/HomayoonAlimohammadi/fancni/pkg/command"
 	"github.com/HomayoonAlimohammadi/fancni/pkg/fan"
@@ -32,11 +31,12 @@ type plugin struct {
 	netNS       string
 	containerID string
 
-	config cni.NetConfig
+	config pkgcni.NetConfig
 	ipam   pkgipam.IPAM
 	hostIP net.IP
 }
 
+// NewPlugin creates a new CNI plugin instance.
 func NewPlugin(netConfig pkgcni.NetConfig, ipam pkgipam.IPAM, hostIP net.IP) *plugin {
 	p := &plugin{
 		cniVersion:           defaultCNIVersion,
@@ -125,17 +125,17 @@ func (c *plugin) HandleAdd() error {
 		return fmt.Errorf("failed to get MAC address: %v", err)
 	}
 
-	result := cni.Result{
+	result := pkgcni.Result{
 		CNIVersion: c.cniVersion,
 	}
-	result.Interfaces = []cni.Interface{
+	result.Interfaces = []pkgcni.Interface{
 		{
 			Name:    c.ifName,
 			MAC:     mac,
 			Sandbox: c.netNS,
 		},
 	}
-	result.IPs = []cni.IP{
+	result.IPs = []pkgcni.IP{
 		{
 			// NOTE(Hue): Only IPv4 is supported for now.
 			Version:   "4",

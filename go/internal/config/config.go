@@ -9,6 +9,7 @@ import (
 	pkgcni "github.com/HomayoonAlimohammadi/fancni/pkg/cni"
 )
 
+// ReadNetConfig reads the network configuration from the provided reader.
 func ReadNetConfig(r io.Reader) (pkgcni.NetConfig, error) {
 	configBytes, err := io.ReadAll(r)
 	if err != nil {
