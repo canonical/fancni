@@ -6,6 +6,9 @@ FanCNI is a CNI plugin based on [Ubuntu fan networking](https://wiki.ubuntu.com/
 
 ### Bash
 
+NOTE: The Bash implementation is just a proof of concept. Please 
+proceed with the Go implementation as it's better suited for all environments.
+
 Copy over the plugin bash script on each machine:
 
 ```shell
