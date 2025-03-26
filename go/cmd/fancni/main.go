@@ -6,12 +6,12 @@ import (
 	"os"
 	"os/exec"
 
-	internalcni "github.com/HomayoonAlimohammadi/fancni/internal/cni"
-	"github.com/HomayoonAlimohammadi/fancni/internal/config"
-	internalipam "github.com/HomayoonAlimohammadi/fancni/internal/ipam"
-	pkgcni "github.com/HomayoonAlimohammadi/fancni/pkg/cni"
-	"github.com/HomayoonAlimohammadi/fancni/pkg/fan"
-	"github.com/HomayoonAlimohammadi/fancni/pkg/net/ip"
+	internalcni "github.com/canonical/fancni/internal/cni"
+	"github.com/canonical/fancni/internal/config"
+	internalipam "github.com/canonical/fancni/internal/ipam"
+	pkgcni "github.com/canonical/fancni/pkg/cni"
+	"github.com/canonical/fancni/pkg/fan"
+	"github.com/canonical/fancni/pkg/net/ip"
 )
 
 const (

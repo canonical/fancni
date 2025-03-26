@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 
-	pkgcni "github.com/HomayoonAlimohammadi/fancni/pkg/cni"
+	pkgcni "github.com/canonical/fancni/pkg/cni"
 )
 
 // ReadNetConfig reads the network configuration from the provided reader.

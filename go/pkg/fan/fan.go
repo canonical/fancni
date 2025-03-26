@@ -6,8 +6,8 @@ import (
 	"net"
 	"strings"
 
-	"github.com/HomayoonAlimohammadi/fancni/pkg/command"
-	"github.com/HomayoonAlimohammadi/fancni/pkg/net/ip"
+	"github.com/canonical/fancni/pkg/command"
+	"github.com/canonical/fancni/pkg/net/ip"
 )
 
 // Ensure creates a fan device if it doesn't exist.

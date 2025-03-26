@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	pkgipam "github.com/HomayoonAlimohammadi/fancni/pkg/ipam"
-	"github.com/HomayoonAlimohammadi/fancni/pkg/net/ip"
+	pkgipam "github.com/canonical/fancni/pkg/ipam"
+	"github.com/canonical/fancni/pkg/net/ip"
 )
 
 // FileIPAM implements the IPAM interface using a file as the backend.

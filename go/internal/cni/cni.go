@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	pkgcni "github.com/HomayoonAlimohammadi/fancni/pkg/cni"
-	"github.com/HomayoonAlimohammadi/fancni/pkg/command"
-	"github.com/HomayoonAlimohammadi/fancni/pkg/fan"
-	pkgipam "github.com/HomayoonAlimohammadi/fancni/pkg/ipam"
-	pkgnet "github.com/HomayoonAlimohammadi/fancni/pkg/net"
+	pkgcni "github.com/canonical/fancni/pkg/cni"
+	"github.com/canonical/fancni/pkg/command"
+	"github.com/canonical/fancni/pkg/fan"
+	pkgipam "github.com/canonical/fancni/pkg/ipam"
+	pkgnet "github.com/canonical/fancni/pkg/net"
 )
 
 const (
