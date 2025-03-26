@@ -1,5 +1,5 @@
-MicroCNI is a minimal container network interface (CNI) plugin for Kubernetes.
-Copyright (C) 2025 Homayoon Alimohammadi
+FanCNI is a container network interface (CNI) plugin for Kubernetes based on Ubuntu fan networking.
+Copyright (C) 2025 Canonical Ltd.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
