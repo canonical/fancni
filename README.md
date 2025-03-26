@@ -57,6 +57,7 @@ lxc exec node1 -- fanctl down -e
 ## TODO
 
 - [ ] Make deployable by Helm (create helm charts and stuff)
+  - Be aware of the NetworkPolicies
 - [ ] Improve test coverage
 - [ ] Add support for IPv6
 - [X] Implement flock
